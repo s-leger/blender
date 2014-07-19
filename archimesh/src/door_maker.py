@@ -2079,7 +2079,7 @@ def create_control_box(objName,x,y,z,tube=True):
                 ,(x/2, 0, z)]
     
     if tube == True:
-        myFaces = [(0,1,2,3),(0,1,5,4),(2,6,7,3),(5,6,7,4)]
+        myFaces = [(0,1,2,3),(0,4,5,1),(1,5,6,2),(3,7,4,0),(2,6,7,3),(5,4,7,6)]
     else:    
         myFaces = [(0,4,5,1),(2,6,7,3)]
         
