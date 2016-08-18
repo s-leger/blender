@@ -1494,7 +1494,12 @@ def is_in_nextface(idx, activefaces, verts, x, y):
 
     return False
 
-
+# -------------------------------------------------------------
+# Update when inverse change on panel
+# -------------------------------------------------------------
+def update_normals(self, context):
+    set_normals(context.scene.objects.active, self.inverse)
+ 
 # ------------------------------------------------------------------
 # Define property group class to create or modify a rooms.
 # ------------------------------------------------------------------
@@ -1512,7 +1517,7 @@ class RoomProperties(PropertyGroup):
     inverse = BoolProperty(
             name="Inverse", description="Inverse normals to outside",
             default=False,
-            update=update_room,
+            update=update_normals,
             )
     crt_mat = BoolProperty(
             name="Create default Cycles materials",
