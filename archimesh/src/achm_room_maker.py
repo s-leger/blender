@@ -34,7 +34,7 @@ from bpy.types import Operator, PropertyGroup, Object, Panel
 from bpy.props import StringProperty, FloatProperty, BoolProperty, IntProperty, FloatVectorProperty, \
     CollectionProperty, EnumProperty
 from bpy_extras.io_utils import ExportHelper, ImportHelper
-from .achm_tools import *
+from achm_tools import *
 
 
 # ----------------------------------------------------------
@@ -464,15 +464,15 @@ def shape_walls_and_create_children(myroom, tmp_mesh, update=False):
     myceiling = None
     myshell = None
     # Create the walls (only mesh, because the object is 'myRoom', created before).
-    create_walls(rp, tmp_mesh, get_blendunits(rp.room_height))
+    create_walls(rp, tmp_mesh, get_blendunits(rp.room_height), False, not rp.inverse)
     # Mark Seams
     select_vertices(myroom, [0, 1])
     mark_seam(myroom)
     # Unwrap
     unwrap_mesh(myroom)
 
-    remove_doubles(myroom)
-    set_normals(myroom, not rp.inverse)  # inside/outside
+    #remove_doubles(myroom)
+    #set_normals(myroom, not rp.inverse)  # inside/outside
 
     if rp.wall_width > 0.0:
         if update is False or is_solidify(myroom) is False:
@@ -500,8 +500,8 @@ def shape_walls_and_create_children(myroom, tmp_mesh, update=False):
         mybase["archimesh.room_object"] = True
         mybase["archimesh.room_baseboard"] = True
 
-        create_walls(rp, baseboardmesh, get_blendunits(rp.base_height), True)
-        set_normals(mybase, rp.inverse)  # inside/outside room
+        create_walls(rp, baseboardmesh, get_blendunits(rp.base_height), True, rp.inverse)
+        #set_normals(mybase, rp.inverse)  # inside/outside room
         if rp.base_width > 0.0:
             set_modifier_solidify(mybase, get_blendunits(rp.base_width))
             # Move to Top SOLIDIFY
@@ -573,30 +573,61 @@ def shape_walls_and_create_children(myroom, tmp_mesh, update=False):
         if o.select is True and o.name != myroom.name:
             o.select = False
 
+# ------------------------------------------------------------------------------ 
+# Low level normal flip
+# input faces array return fliped faces array
+# ------------------------------------------------------------------------------
+def flip_faces_normal(faces):
+    return [face[::-1] for face in faces]
+
+# ------------------------------------------------------------------------------
+# Adds a segment
+#   vidx: first vertex index of face.
+#   x: X position of the end of the last wall.
+#   y: Y position of the end of the last wall.
+#   z: Height of the last wall, without peak.
+# ------------------------------------------------------------------------------   
+def addSegment(myfaces, myverts, vidx, x, y, z):
+        myverts.extend([(x, y, z), (x, y, 0.0)])
+        myfaces.append((vidx, vidx + 1, vidx + 3, vidx + 2))
+        return vidx + 2
 
 # ------------------------------------------------------------------------------
 # Create walls or baseboard (indicated with baseboard parameter).
 # Some custom values are passed using the rp ("room properties" group) parameter (rp.myvariable).
 # ------------------------------------------------------------------------------
-def create_walls(rp, mymesh, height, baseboard=False):
-    myvertex = [(0.0, 0.0, height), (0.0, 0.0, 0.0)]
+def create_walls(rp, mymesh, height, baseboard=False, inverse=False):
+    
+    myverts = []
     myfaces = []
-    lastface = 0
-    lastx = lasty = 0
+    
+    # vertex index of first face vertex
+    vidx = -2
     idf = 0
+    x = y = 0
+    point_gl = (0, 0, 0)
     # Iterate the walls
     for i in range(0, rp.wall_num):
+        # prv here means we need to create starting vertices
+        # the last segment is not visible
         if 0 == i:
-            prv = False
+            prv = check_visibility(rp.walls[0].h, baseboard) or rp.merge 
         else:
-            prv = rp.walls[i - 1].a and not rp.walls[i - 1].curved
-
-        mydat = make_wall(prv, rp.walls[i], baseboard, lastface,
-                          lastx, lasty, height, myvertex, myfaces)
-        lastx = mydat[0]
-        lasty = mydat[1]
-        lastface = mydat[2]
-
+            prv = not check_visibility(rp.walls[i - 1].h, baseboard)
+        
+        x, y, vidx = make_wall(prv, rp.walls[i], baseboard, vidx,
+                          x, y, height, myverts, myfaces)
+        
+       
+        # --------------------------------------
+        # saves vertex data for opengl
+        # --------------------------------------
+        try:
+            rp.walls[i].glpoint_a = point_gl
+            point_gl = (x, y, 0)
+            rp.walls[i].glpoint_b = point_gl
+        except IndexError:
+            pass
         # --------------------------------------
         # saves vertex data for opengl
         # --------------------------------------
@@ -604,45 +635,43 @@ def create_walls(rp, mymesh, height, baseboard=False):
         point_b = None
         try:
             for mf in myfaces[idf]:
-                if myvertex[mf][2] == 0:
+                if myverts[mf][2] == 0:
                     if point_a is None:
-                        point_a = myvertex[mf]
+                        point_a = myverts[mf]
                     else:
-                        point_b = myvertex[mf]
+                        point_b = myverts[mf]
 
-            rp.walls[i].glpoint_a = point_a
-            rp.walls[i].glpoint_b = point_b
         except IndexError:
             pass
-
+        else:
+            rp.walls[i].glpoint_a = point_a
+            rp.walls[i].glpoint_b = point_b
+          
         idf = len(myfaces)
-
     # Close room
     if rp.merge is True:
-        if baseboard is False:
-            if rp.walls[rp.wall_num - 1].a is not True:
-                myfaces.extend([(0, 1, lastface + 1, lastface)])
-            else:
-                if rp.walls[rp.wall_num - 1].curved is True:
-                    myfaces.extend([(0, 1, lastface + 1, lastface)])
-                else:
-                    myfaces.extend([(0, 1, lastface, lastface + 1)])
-        else:
-            myfaces.extend([(0, 1, lastface + 1, lastface)])
-
-    mymesh.from_pydata(myvertex, [], myfaces)
+        myfaces.extend([(vidx, vidx + 1, 1, 0)])
+    
+    # flip normals
+    if inverse:
+        myfaces = flip_faces_normal(myfaces)
+    
+    print("myfaces="+str(myfaces))
+    
+    mymesh.from_pydata(myverts, [], myfaces)
+    
     mymesh.update(calc_edges=True)
 
 
 # ------------------------------------------------------------------------------
 # Make a Wall
-#   prv: If previous wall has 'curved' activate.
-#   lastFace: Number of faces of all before walls.
-#   lastX: X position of the end of the last wall.
-#   lastY: Y position of the end of the last wall.
-#   height: Height of the last wall, without peak.
+#   prv: Segment need starting vertex.
+#   vidx: first vertex index of face.
+#   x: X position of the end of the last wall.
+#   y: Y position of the end of the last wall.
+#   z: Height of the last wall, without peak.
 # ------------------------------------------------------------------------------
-def make_wall(prv, wall, baseboard, lastface, lastx, lasty, height, myvertex, myfaces):
+def make_wall(prv, wall, baseboard, vidx, x, y, z, myverts, myfaces):
     #   size: Length of the wall.
     #   over: Height of the peak from "height".
     #   factor: Displacement of the peak (between -1 and 1; 0 is the middle of the wall).
@@ -654,84 +683,56 @@ def make_wall(prv, wall, baseboard, lastface, lastx, lasty, height, myvertex, my
     hide = wall.h
 
     # if angle negative, calculate real
-    # use add because the angle is negative
+    # use add because the angle is negative 
     if angle < 0:
         angle += 360
-    # Verify Units
+    # Verify Units    
     size = get_blendunits(size)
     over = get_blendunits(over)
 
     # Calculate size using angle
-    sizex = cos(radians(angle)) * size
-    sizey = sin(radians(angle)) * size
-
-    # Create faces
-    if advanced is False or baseboard is True:
-        # Cases of this first option: Baseboard or wall without peak and without curve.
-        if baseboard is True and advanced is True and wall.curved is True:
-            (myvertex, myfaces, sizex, sizey, lastface) = make_curved_wall(myvertex, myfaces, size, angle,
-                                                                           lastx, lasty, height, lastface,
-                                                                           wall.curve_factor, int(wall.curve_arc_deg),
-                                                                           int(wall.curve_arc_deg / wall.curve_steps),
-                                                                           hide, baseboard)
-        else:
-            myvertex.extend([(lastx + sizex, lasty + sizey, height),
-                             (lastx + sizex, lasty + sizey, 0.0)])
-            if check_visibility(hide, baseboard):
-                if prv is False or baseboard is True:
-                    # Previous no advance or advance with curve
-                    myfaces.extend([(lastface, lastface + 2, lastface + 3, lastface + 1)])
-                else:
-                    # Previous advance without curve
-                    myfaces.extend([(lastface, lastface + 1, lastface + 2, lastface + 3)])
-            lastface += 2
-    else:
-        # Case of this second option: Wall with advanced features (orientation, visibility and peak or curve).
-        # Orientation and visibility options ('angle' and 'hide' variables) are only visible in panel
-        # with advanced features, but are taken in account in any case.
+    a = radians(angle)
+    sizex = cos(a) * size
+    sizey = sin(a) * size
+    
+    if prv:
+        # We need starting vertices
+        myverts.extend([(x, y, z),(x, y, 0.0)])
+        vidx += 2
+        
+    if check_visibility(hide, baseboard):
+        
         if wall.curved:
+            
             # Wall with curve and without peak.
-            (myvertex, myfaces, sizex, sizey, lastface) = make_curved_wall(myvertex, myfaces, size, angle,
-                                                                           lastx, lasty, height, lastface,
-                                                                           wall.curve_factor, int(wall.curve_arc_deg),
-                                                                           int(wall.curve_arc_deg / wall.curve_steps),
-                                                                           hide, baseboard)
-        else:
-            # Wall with peak and without curve.
-            mid = size / 2 + ((size / 2) * factor)
-            midx = cos(radians(angle)) * mid
-            midy = sin(radians(angle)) * mid
-            # first face
-            myvertex.extend([(lastx + midx, lasty + midy, height + over),
-                             (lastx + midx, lasty + midy, 0.0)])
-            if check_visibility(hide, baseboard):
+            sizex, sizey, vidx = make_curved_wall(myverts, myfaces, size, angle,
+                                                       x, y, z, vidx,
+                                                       wall.curve_factor, int(wall.curve_arc_deg),
+                                                       int(wall.curve_arc_deg / wall.curve_steps))
+        else:            
+            if baseboard:
+                vidx = addSegment(myfaces, myverts, vidx, x + sizex, y + sizey, z)
+            else:
+                # Wall without curve
+                midx = x + (sizex * (1 + factor)) / 2
+                midy = y + (sizey * (1 + factor)) / 2
                 if fabs(factor) != 1:
-                    if prv is False:
-                        # Previous no advance or advance with curve
-                        myfaces.extend([(lastface, lastface + 2, lastface + 3, lastface + 1)])
-                    else:
-                        # Previous advance without curve
-                        myfaces.extend([(lastface, lastface + 1, lastface + 2, lastface + 3)])
-            # second face
-            myvertex.extend([(lastx + sizex, lasty + sizey, 0.0),
-                             (lastx + sizex, lasty + sizey, height)])
-            if check_visibility(hide, baseboard):
-                if fabs(factor) != 1:
-                    myfaces.extend([(lastface + 2, lastface + 3, lastface + 4, lastface + 5)])
+                    # Wall with peak and without curve.
+                    if over > 0:
+                        # Peak 
+                        vidx = addSegment(myfaces, myverts, vidx, midx, midy, z + over)
+                    vidx = addSegment(myfaces, myverts, vidx, x + sizex, y + sizey, z)
                 else:
-                    if prv is False:
-                        myfaces.extend([(lastface, lastface + 5, lastface + 4, lastface + 1),
-                                        (lastface, lastface + 2, lastface + 5)])
-                    else:
-                        myfaces.extend([(lastface, lastface + 4, lastface + 5, lastface + 1),
-                                        (lastface + 1, lastface + 2, lastface + 5)])
+                    if factor < 0:
+                        myverts[vidx] = (myverts[vidx][0],myverts[vidx][1],z + over)
+                        vidx = addSegment(myfaces, myverts, vidx, x + sizex, y + sizey, z)
+                    else:    
+                        vidx = addSegment(myfaces, myverts, vidx, x + sizex, y + sizey, z + over)
+                           
+    x += sizex
+    y += sizey
 
-            lastface += 4
-
-    lastx += sizex
-    lasty += sizey
-
-    return lastx, lasty, lastface
+    return x, y, vidx
 
 
 # ------------------------------------------------------------------------------
@@ -761,24 +762,24 @@ def check_visibility(h, base):
 # ------------------------------------------------------------------------------
 # Create a curved wall.
 # ------------------------------------------------------------------------------
-def make_curved_wall(myvertex, myfaces, size, wall_angle, lastx, lasty, height,
-                     lastface, curve_factor, arc_angle, step_angle, hide, baseboard):
-    curvex = None
-    curvey = None
+def make_curved_wall(myverts, myfaces, size, wall_angle, x, y, z,
+                     vidx, curve_factor, arc_angle, step_angle):
+    cx = None
+    cy = None
     # Calculate size using angle
-    sizex = cos(radians(wall_angle)) * size
-    sizey = sin(radians(wall_angle)) * size
+    a = radians(wall_angle)
+    sizex = cos(a) * size
+    sizey = sin(a) * size
+    
+    for step in range(1, arc_angle + step_angle, step_angle):
+        a = radians(step + wall_angle)
+        cx = (sizex - cos(a) * size) / 2
+        cy = (sizey - sin(a) * size) / 2
+        cy = cy * curve_factor
+        vidx = addSegment(myfaces, myverts, vidx, x + cx, y + cy, z)
+        
+    return cx, cy, vidx
 
-    for step in range(0, arc_angle + step_angle, step_angle):
-        curvex = sizex / 2 - cos(radians(step + wall_angle)) * size / 2
-        curvey = sizey / 2 - sin(radians(step + wall_angle)) * size / 2
-        curvey = curvey * curve_factor
-        myvertex.extend([(lastx + curvex, lasty + curvey, height),
-                         (lastx + curvex, lasty + curvey, 0.0)])
-        if check_visibility(hide, baseboard):
-            myfaces.extend([(lastface, lastface + 2, lastface + 3, lastface + 1)])
-        lastface += 2
-    return myvertex, myfaces, curvex, curvey, lastface
 
 
 # ------------------------------------------------------------------------------
@@ -985,51 +986,42 @@ def sort_facelist(activefaces, activenormals):
     # Look for first element
     # -----------------------
     flag = False
-    for x in range(1, totfaces):
+    for idx, face in enumerate(activefaces):
         if flag is False:
-            idx = 0
-            for face in activefaces:
-                c = 0
-                for i in face:
-                    if i == 0 or i == 1:
-                        c += 1
-                    # avoid close
-                    if i > 3:
-                        c -= 1
-
-                if c >= 2 and face not in newlist:
-                    newlist.append(face)
-                    newnormal.append(activenormals[idx])
-                    flag = True
-                idx += 1
+            c = 0
+            for i in face:
+                if i == 0 or i == 1:
+                    c += 1
+            if c >= 2 and face not in newlist:
+                newlist.append(face)
+                newnormal.append(activenormals[idx])
+                flag = True
 
     # -----------------------
     # Look for second element
     # -----------------------
     flag = False
-    for x in range(1, totfaces):
+    for idx, face in enumerate(activefaces):
         if flag is False:
-            idx = 0
-            for face in activefaces:
-                c = 0
-                for i in face:
-                    if i == 2 or i == 3:
-                        c += 1
-                if c >= 2 and face not in newlist:
-                    newlist.append(face)
-                    newnormal.append(activenormals[idx])
-                    flag = True
-                idx += 1
+            c = 0
+            for i in face:
+                if i == 2 or i == 3:
+                    c += 1
+            if c >= 2 and face not in newlist:
+                newlist.append(face)
+                newnormal.append(activenormals[idx])
+                flag = True
 
     # -----------------------
     # Add next faces
     # -----------------------
-    for x in range(2, totfaces):
+    print("newlist="+str(newlist))
+    for x in range(1, totfaces):
         idx = 0
         for face in activefaces:
             c = 0
             for i in face:
-                if i == newlist[x - 1][0] or i == newlist[x - 1][1] or i == newlist[x - 1][2] or i == newlist[x - 1][3]:
+                if i == newlist[x][0] or i == newlist[x][1] or i == newlist[x][2] or i == newlist[x][3]:
                     c += 1
             if c >= 2 and face not in newlist:
                 newlist.append(face)
@@ -1091,7 +1083,7 @@ def get_wall_points(selobject):
         activefaces.append(mylist)
         activenormals.append(normals[idx])
         idx += 1
-
+    print("activefaces="+str(activefaces))
     # ------------------------
     # Sort faces
     # ------------------------
