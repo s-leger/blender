@@ -634,8 +634,6 @@ def create_walls(rp, mymesh, height, baseboard=False, inverse=False):
     if inverse:
         myfaces = flip_faces_normal(myfaces)
     
-    print("myfaces="+str(myfaces))
-    
     mymesh.from_pydata(myverts, [], myfaces)
     
     mymesh.update(calc_edges=True)
@@ -990,7 +988,6 @@ def sort_facelist(activefaces, activenormals):
     # -----------------------
     # Add next faces
     # -----------------------
-    print("newlist="+str(newlist))
     for x in range(1, totfaces):
         idx = 0
         for face in activefaces:
@@ -1058,7 +1055,6 @@ def get_wall_points(selobject):
         activefaces.append(mylist)
         activenormals.append(normals[idx])
         idx += 1
-    print("activefaces="+str(activefaces))
     # ------------------------
     # Sort faces
     # ------------------------
