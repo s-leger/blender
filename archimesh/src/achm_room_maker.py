@@ -912,155 +912,18 @@ def add_room_wall(self, context):
 
 
 # ------------------------------------
-# Get if some vertex is highest
-# ------------------------------------
-def get_hight(verts, faces_4, faces_3, face_index, face_num):
-    rtn = face_index
-    a = faces_4[face_num][0]
-    b = faces_4[face_num][1]
-    c = faces_4[face_num][2]
-    d = faces_4[face_num][3]
-
-    for face3 in faces_3:
-        for idx3 in face3:
-            if idx3 != face_index:
-                # check x and y position (must be equal)
-                if verts[idx3][0] == verts[face_index][0] and verts[idx3][1] == verts[face_index][1]:
-                    # only if z is > that previous z
-                    if verts[idx3][2] > verts[face_index][2]:
-                        # checking if the original vertex is in the same face
-                        # must have 2 vertices on the original face
-                        t = 0
-                        for e in face3:
-                            if e == a or e == b or e == c or e == d:
-                                t += 1
-                        if t >= 2:
-                            rtn = idx3
-
-    return rtn
-
-
-# ------------------------------------
-# Sort list of faces
-# ------------------------------------
-def sort_facelist(activefaces, activenormals):
-    totfaces = len(activefaces)
-    newlist = []
-    newnormal = []
-    # -----------------------
-    # Only one face
-    # -----------------------
-    if totfaces == 1:
-        newlist.append(activefaces[0])
-        newnormal.append(activenormals[0])
-        return newlist, newnormal
-
-    # -----------------------
-    # Look for first element
-    # -----------------------
-    flag = False
-    for idx, face in enumerate(activefaces):
-        if flag is False:
-            c = 0
-            for i in face:
-                if i == 0 or i == 1:
-                    c += 1
-            if c >= 2 and face not in newlist:
-                newlist.append(face)
-                newnormal.append(activenormals[idx])
-                flag = True
-
-    # -----------------------
-    # Look for second element
-    # -----------------------
-    flag = False
-    for idx, face in enumerate(activefaces):
-        if flag is False:
-            c = 0
-            for i in face:
-                if i == 2 or i == 3:
-                    c += 1
-            if c >= 2 and face not in newlist:
-                newlist.append(face)
-                newnormal.append(activenormals[idx])
-                flag = True
-
-    # -----------------------
-    # Add next faces
-    # -----------------------
-    for x in range(1, totfaces):
-        idx = 0
-        for face in activefaces:
-            c = 0
-            for i in face:
-                if i == newlist[x][0] or i == newlist[x][1] or i == newlist[x][2] or i == newlist[x][3]:
-                    c += 1
-            if c >= 2 and face not in newlist:
-                newlist.append(face)
-                newnormal.append(activenormals[idx])
-            idx += 1
-
-    return newlist, newnormal
-
-
-# ------------------------------------
 # Get points of the walls
 # selobject: room
 # ------------------------------------
 def get_wall_points(selobject):
     obverts = selobject.data.vertices
     obfaces = selobject.data.polygons
-
-    verts = []
-    faces_3 = []
-    faces_4 = []
-    normals = []
-    activefaces = []
-    activenormals = []
-
-    # --------------------------
-    # Recover all vertex
-    # --------------------------
-    for vertex in obverts:
-        verts.append(list(vertex.co))
-
-    # --------------------------
-    # Recover 3 faces
-    # --------------------------
-    for face in obfaces:
-        # get only 4 corners faces
-        if len(list(face.vertices)) == 3:
-            faces_3.append(list(face.vertices))
-    # --------------------------
-    # Recover 4 faces
-    # --------------------------
-    for face in obfaces:
-        # get only 4 corners faces
-        if len(list(face.vertices)) == 4:
-            faces_4.append(list(face.vertices))
-            normals.append(face.normal)
-    # --------------------------
-    # Replace highest
-    # --------------------------
-    idx = 0
-    for face in faces_4:
-        mylist = []
-        for e in face:  # e contains the number of vertex element
-            if verts[e][2] == 0:
-                mylist.append(e)
-            # Only if Z > 0, recalculate
-            if verts[e][2] != 0:
-                mylist.append(get_hight(verts, faces_4, faces_3, e, idx))
-
-        activefaces.append(mylist)
-        activenormals.append(normals[idx])
-        idx += 1
-    # ------------------------
-    # Sort faces
-    # ------------------------
-    newlist, newnormal = sort_facelist(activefaces, activenormals)
-    return verts, newlist, newnormal
-
+    
+    verts = [list(vert.co) for vert in obverts]
+    normals = [face.normal for face in obfaces]
+    faces = [list(face.vertices) for face in obfaces]
+    
+    return verts, faces, normals
 
 # ------------------------------------
 # Create a shell of boards
