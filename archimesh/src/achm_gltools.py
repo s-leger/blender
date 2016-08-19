@@ -160,25 +160,14 @@ def draw_room_data(myobj, op, region, rv3d, rgb, rgbw, fsize, wfsize, space, mea
     # --------------------------
     # Get line points and draw
     # --------------------------
+    a1 = 1
+    b1 = 3
+    a2 = 0
+    b2 = 2    
+    
     for face in activefaces:
-        a1 = None
-        b1 = None
-        a2 = None
-        b2 = None
-        # Bottom
-        for e in face:
-            if verts[e][2] == 0:
-                if a1 is None:
-                    a1 = e
-                else:
-                    b1 = e
-        # Top
-        for e in face:
-            if verts[e][2] != 0:
-                if verts[a1][0] == verts[e][0] and verts[a1][1] == verts[e][1]:
-                    a2 = e
-                else:
-                    b2 = e
+
+
         # Points
         # a1_p = get_point((verts[a1][0], verts[a1][1], verts[a1][2]), myobj)  # bottom
         a2_p = get_point((verts[a2][0], verts[a2][1], verts[a2][2] + space), myobj)  # top
