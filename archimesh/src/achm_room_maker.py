@@ -471,9 +471,8 @@ def shape_walls_and_create_children(myroom, tmp_mesh, update=False):
     # Unwrap
     unwrap_mesh(myroom)
 
-    #remove_doubles(myroom)
-    #set_normals(myroom, not rp.inverse)  # inside/outside
-
+    remove_doubles(myroom)
+    
     if rp.wall_width > 0.0:
         if update is False or is_solidify(myroom) is False:
             set_modifier_solidify(myroom, get_blendunits(rp.wall_width))
@@ -501,7 +500,6 @@ def shape_walls_and_create_children(myroom, tmp_mesh, update=False):
         mybase["archimesh.room_baseboard"] = True
 
         create_walls(rp, baseboardmesh, get_blendunits(rp.base_height), True, rp.inverse)
-        #set_normals(mybase, rp.inverse)  # inside/outside room
         if rp.base_width > 0.0:
             set_modifier_solidify(mybase, get_blendunits(rp.base_width))
             # Move to Top SOLIDIFY
@@ -603,7 +601,6 @@ def create_walls(rp, mymesh, height, baseboard=False, inverse=False):
     
     # vertex index of first face vertex
     vidx = -2
-    idf = 0
     x = y = 0
     point_gl = (0, 0, 0)
     # Iterate the walls
@@ -628,26 +625,7 @@ def create_walls(rp, mymesh, height, baseboard=False, inverse=False):
             rp.walls[i].glpoint_b = point_gl
         except IndexError:
             pass
-        # --------------------------------------
-        # saves vertex data for opengl
-        # --------------------------------------
-        point_a = None
-        point_b = None
-        try:
-            for mf in myfaces[idf]:
-                if myverts[mf][2] == 0:
-                    if point_a is None:
-                        point_a = myverts[mf]
-                    else:
-                        point_b = myverts[mf]
-
-        except IndexError:
-            pass
-        else:
-            rp.walls[i].glpoint_a = point_a
-            rp.walls[i].glpoint_b = point_b
-          
-        idf = len(myfaces)
+    
     # Close room
     if rp.merge is True:
         myfaces.extend([(vidx, vidx + 1, 1, 0)])
@@ -710,24 +688,21 @@ def make_wall(prv, wall, baseboard, vidx, x, y, z, myverts, myfaces):
                                                        wall.curve_factor, int(wall.curve_arc_deg),
                                                        int(wall.curve_arc_deg / wall.curve_steps))
         else:            
-            if baseboard:
-                vidx = addSegment(myfaces, myverts, vidx, x + sizex, y + sizey, z)
-            else:
-                # Wall without curve
-                midx = x + (sizex * (1 + factor)) / 2
-                midy = y + (sizey * (1 + factor)) / 2
+            last_z = z
+            if (not baseboard) and over > 0:
+                # Peak
                 if fabs(factor) != 1:
-                    # Wall with peak and without curve.
-                    if over > 0:
-                        # Peak 
-                        vidx = addSegment(myfaces, myverts, vidx, midx, midy, z + over)
-                    vidx = addSegment(myfaces, myverts, vidx, x + sizex, y + sizey, z)
+                    midx = x + (sizex * (1 + factor)) / 2
+                    midy = y + (sizey * (1 + factor)) / 2
+                    vidx = addSegment(myfaces, myverts, vidx, midx, midy, z + over)
                 else:
                     if factor < 0:
-                        myverts[vidx] = (myverts[vidx][0],myverts[vidx][1],z + over)
-                        vidx = addSegment(myfaces, myverts, vidx, x + sizex, y + sizey, z)
-                    else:    
-                        vidx = addSegment(myfaces, myverts, vidx, x + sizex, y + sizey, z + over)
+                        # move top vertex of last segment up
+                        myverts[vidx] = (myverts[vidx][0], myverts[vidx][1], z + over)
+                    else:  
+                        last_z = z + over
+            
+            vidx = addSegment(myfaces, myverts, vidx, x + sizex, y + sizey, last_z)
                            
     x += sizex
     y += sizey
